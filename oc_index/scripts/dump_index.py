@@ -187,7 +187,8 @@ def main():
 
 
     cursor = 0
-    g_chunks = [[]]
+    g_chunks = [[] for _ in range(WORKERS)]
+    br_meta = {}
 
     # iterate over all the citing entities
     while True:
@@ -195,7 +196,6 @@ def main():
         # index of entites to process
         # <citing_omid>: [<cited_omid_1>, <cited_omid_2>, <cited_omid_3> ... ]
         cits_pairs_to_process = []
-        br_meta = {}
 
         # get from redis first CITED_BATCH_SIZE citing entites
         cursor, cited_keys = redis_cits.scan(cursor=cursor, count=CITED_BATCH_SIZE)
@@ -209,7 +209,7 @@ def main():
 
             for _a_cited, _val_citing in zip(cited_keys, citing_values):
                 # to_process
-                _a_cited = "omid:br/"+_a_cited
+                _a_cited = "omid:"+_a_cited
                 _l_citing = list({ "omid:" + _a.split(":")[1] for _a in _val_citing })
 
                 cits_pairs_to_process += [(_a_citing, _a_cited) for _a_citing in _l_citing]
@@ -223,14 +223,14 @@ def main():
         if cits_pairs_to_process:
 
             chunks = chunk_list(cits_pairs_to_process, WORKERS)
-            for i in range(len(g_chunks)):
+            for i in range(0,WORKERS):
                 g_chunks[i].extend(chunks[i])
 
             if len(g_chunks[0]) >= CITATIONS_PER_FILE:
 
                 processes = []
                 for idx,chunk in enumerate(g_chunks):
-                    _logger.info(f" - {len(chunk)} - {chunk[0]} - {chunk[idx]}")
+                    _logger.info(f" - Process {idx} elaborates #citations in chunk: {len(chunk)}")
                     p = Process(target=process_pair, args=(chunk, idx, br_meta, cursor == 0))
                     p.start()
                     processes.append(p)
@@ -239,7 +239,8 @@ def main():
                 for p in processes:
                     p.join()
 
-                g_chunks = [[]]
+                g_chunks = [[] for _ in range(WORKERS)]
+                br_meta = {}
 
         # in case there are some entities to process iterate over all citation pairs
         # if cits_pairs_to_process:
@@ -277,6 +278,9 @@ def process_pair(pairs, pnum, br_meta, end_cursor = False):
         m_citing = br_meta.get(citing)
         m_cited = br_meta.get(cited)
 
+        #CHECK:
+        #_logger.info(f" - CEHCK – {m_citing} - {m_cited} ")
+
         # in case one of two entites has no metadata move to next citation
         if not m_citing or not m_cited:
             continue
@@ -287,33 +291,33 @@ def process_pair(pairs, pnum, br_meta, end_cursor = False):
 
         oci_val = "oci:"+citing.replace("omid:br/","")+"-"+cited.replace("omid:br/","")
 
-        _logger.info(f" - {pair} - {citing} - {cited} - {m_citing} - {m_cited} ")
-        break
-
-        data_to_dump.append(
-            Citation(
-                oci_val, # oci,
-                idbase_url + quote(citing.replace("omid:","")), # citing_url,
-                m_citing["date"], # citing_pub_date,
-                idbase_url + quote(cited.replace("omid:","")), # cited_url,
-                m_cited["date"], # cited_pub_date,
-                None, # creation,
-                None, # timespan,
-                1, # prov_entity_number,
-                agent, # prov_agent_url,
-                source, # source,
-                datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat(sep="T"), # prov_date,
-                service_name, # service_name,
-                index_identifier, # id_type,
-                idbase_url + "([[XXX__decode]])", # id_shape,
-                "reference", # citation_type,
-                bool(set(m_citing["issn"]) & set(m_cited["issn"])), # journal_sc=False,
-                bool(set(m_citing["orcid"]) & set(m_cited["orcid"])), # journal_sc=False,
-                None, # prov_inv_date=None,
-                "Creation of the citation", # prov_description=None,
-                None, # prov_update=None,
+        try:
+            data_to_dump.append(
+                Citation(
+                    oci_val, # oci,
+                    idbase_url + quote(citing.replace("omid:","")), # citing_url,
+                    m_citing["date"], # citing_pub_date,
+                    idbase_url + quote(cited.replace("omid:","")), # cited_url,
+                    m_cited["date"], # cited_pub_date,
+                    None, # creation,
+                    None, # timespan,
+                    1, # prov_entity_number,
+                    agent, # prov_agent_url,
+                    source, # source,
+                    datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat(sep="T"), # prov_date,
+                    service_name, # service_name,
+                    index_identifier, # id_type,
+                    idbase_url + "([[XXX__decode]])", # id_shape,
+                    "reference", # citation_type,
+                    bool(set(m_citing["issn"]) & set(m_cited["issn"])), # journal_sc=False,
+                    bool(set(m_citing["orcid"]) & set(m_cited["orcid"])), # journal_sc=False,
+                    None, # prov_inv_date=None,
+                    "Creation of the citation", # prov_description=None,
+                    None, # prov_update=None,
+                )
             )
-        )
+        except Exception as e:
+            pass
 
     # write p_data_to_dump to files when range CITATIONS_PER_FILE is reached
     # if len(data_to_dump[pnum]) >= CITATIONS_PER_FILE or end_cursor:
