@@ -316,7 +316,7 @@ def _process_csv_file(a_csv_file, rconn_db_br, rconn_db_ra, rconn_db_metadata):
     ra_data = defaultdict(set)
     metadata = {}
 
-    text_file = io.TextIOWrapper(a_csv_file)
+    text_file = io.TextIOWrapper(a_csv_file, encoding="utf-8")
     try:
         for o_row in csv.DictReader(text_file):
             br_ids = get_key_ids(o_row["id"])
